@@ -1,0 +1,22 @@
+# Dependências
+node_modules/
+
+# Configurações sensíveis (CRÍTICO)
+.env
+
+# Arquivos de Build
+dist/
+build/
+
+# Logs e Cache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+
+# Banco de dados local (se usar SQLite)
+*.db
+*.db-journal
+
+# Prisma (opcional, mas comum ignorar o esquema gerado se for o caso)
+/prisma/generated-client

@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String     @id @default(uuid())
+  name      String
+  email     String     @unique
+  password  String
+  isApproved Boolean    @default(false)
+  role       String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  instances Instance[]
+  campaigns Campaign[]
+}
+
+model Instance {
+  id         String     @id @default(uuid())
+  name       String     
+  status     String     @default("DISCONNECTED") 
+  whatsappId String?    @unique 
+  token      String     @unique @default(uuid()) 
+  owner      User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId    String
+  campaigns  Campaign[]
+  createdAt  DateTime   @default(now())
+}
+
+model Campaign {
+  id          String         @id @default(uuid())
+  name        String
+  message     String         @db.Text
+  status      String         @default("IDLE") 
+  scheduledTo DateTime?
+  totalLeads  Int            @default(0)
+  sentCount   Int            @default(0)
+  errorCount  Int            @default(0)
+  owner       User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId     String
+  instance    Instance       @relation(fields: [instanceId], references: [id])
+  instanceId  String
+  leads       Lead[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model Lead {
+  id         String   @id @default(uuid())
+  phone      String
+  name       String?
+  variables  Json?    
+  status     String   @default("PENDING") 
+  errorMsg   String?
+  sentAt     DateTime?
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignId String
+
+  @@index([status]) 
+}
