@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Rocket, Loader2 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import api from '../api/api';
 
 export function LoginPage() {
@@ -21,9 +22,12 @@ export function LoginPage() {
       localStorage.setItem('@DynamicShots:token', response.data.token);
       localStorage.setItem('@DynamicShots:user', JSON.stringify(response.data.user));
 
+      toast.success('Login realizado com sucesso');
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Falha na autenticação');
+      const message = err.response?.data?.error || 'Falha na autenticação';
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }

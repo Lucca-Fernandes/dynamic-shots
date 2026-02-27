@@ -1,23 +1,24 @@
-import { useState, useEffect, useRef } from 'react';
-import { Send, MessageSquare, Users, Image as ImageIcon, LayoutDashboard, Smartphone, ShieldCheck, LogOut, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Send, MessageSquare, Users, LayoutDashboard, Smartphone, ShieldCheck, LogOut, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/api';
 
 export function SendMessagesPage() {
   const navigate = useNavigate();
-  
+
   const [instances, setInstances] = useState<any[]>([]);
   const [selectedInstance, setSelectedInstance] = useState('');
   const [message, setMessage] = useState('');
   const [numbers, setNumbers] = useState('');
-  
+
   const [isSending, setIsSending] = useState(false);
-  const [progress] = useState({ current: 0, total: 0 });
-  const [logs] = useState<{number: string, status: 'success' | 'error'}[]>([]);
-  
+
+  // CORREÇÃO: Agora declaramos os setters que estavam faltando
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [logs, setLogs] = useState<Array<{ number: string; status: 'success' | 'error'; message?: string }>>([]);
+
   const user = JSON.parse(localStorage.getItem('@DynamicShots:user') || '{}');
-  
-  const stopSignal = useRef(false);
 
   useEffect(() => {
     api.get('/instances').then(res => {
@@ -32,36 +33,48 @@ export function SendMessagesPage() {
   };
 
   async function startBulkSend() {
-  const list = numbers
-    .split('\n')
-    .map(n => n.trim())
-    .filter(n => n.length > 8);
-  
-  if (list.length === 0) return alert("Insira ao menos um número válido.");
-  if (!message) return alert("A mensagem não pode estar vazia.");
-  if (!selectedInstance) return alert("Selecione uma instância.");
+    const list = numbers
+      .split('\n')
+      .map(n => n.trim())
+      .filter(n => n.length > 8);
 
-  setIsSending(true);
+    if (list.length === 0) {
+      toast.error('Insira ao menos um número válido.');
+      return;
+    }
+    if (!message) {
+      toast.error('A mensagem não pode estar vazia.');
+      return;
+    }
+    if (!selectedInstance) {
+      toast.error('Selecione uma instância.');
+      return;
+    }
 
-  try {
-    await api.post('/messages/bulk', {
-      instanceId: selectedInstance,
-      message: message,
-      numbers: list
-    });
+    setIsSending(true);
+    // Resetar logs e progresso antes de iniciar
+    setLogs([]);
+    setProgress({ current: 0, total: list.length });
 
-    alert("O disparo foi iniciado! O servidor enviará as mensagens a cada 30 segundos. Você já pode navegar para outras páginas.");
-    
-    setNumbers('');
-    setMessage('');
-    
-  } catch (err: any) {
-    console.error("Erro ao iniciar disparo:", err);
-    alert(err.response?.data?.error || "Erro ao conectar com o servidor.");
-  } finally {
-    setIsSending(false);
+    try {
+      await api.post('/messages/bulk', {
+        instanceId: selectedInstance,
+        message: message,
+        numbers: list
+      });
+
+      toast.success('O disparo foi iniciado! O servidor processará a fila.');
+
+      setNumbers('');
+      setMessage('');
+
+    } catch (err: any) {
+      console.error("Erro ao iniciar disparo:", err);
+      toast.error(err.response?.data?.error || 'Erro ao conectar com o servidor.');
+    } finally {
+      setIsSending(false);
+    }
   }
-}
 
   return (
     <div className="min-h-screen bg-slate-950 flex text-white font-sans">
@@ -94,16 +107,16 @@ export function SendMessagesPage() {
             <h1 className="text-3xl font-bold flex items-center gap-3"><Send className="text-indigo-500" /> Disparo em Massa</h1>
             <p className="text-slate-400">Intervalo configurado: <span className="text-indigo-400 font-bold">30 segundos</span> (Anti-Ban).</p>
           </div>
-          {isSending && (
-             <div className="text-right">
-                <p className="text-sm font-bold text-indigo-400 animate-pulse">Enviando: {progress.current} / {progress.total}</p>
-                <div className="w-48 h-2 bg-slate-800 rounded-full mt-2 overflow-hidden">
-                   <div 
-                    className="h-full bg-indigo-500 transition-all duration-500" 
-                    style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                   />
-                </div>
-             </div>
+          {isSending && progress.total > 0 && (
+            <div className="text-right">
+              <p className="text-sm font-bold text-indigo-400 animate-pulse">Enviando: {progress.current} / {progress.total}</p>
+              <div className="w-48 h-2 bg-slate-800 rounded-full mt-2 overflow-hidden">
+                <div
+                  className="h-full bg-indigo-500 transition-all duration-500"
+                  style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                />
+              </div>
+            </div>
           )}
         </header>
 
@@ -112,7 +125,7 @@ export function SendMessagesPage() {
             <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl">
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-300 mb-3"><MessageSquare className="w-4 h-4 text-indigo-400" /> Sua Mensagem</label>
-                <textarea 
+                <textarea
                   disabled={isSending}
                   className="w-full h-64 bg-slate-800 border border-slate-700 rounded-2xl p-5 text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none disabled:opacity-50"
                   placeholder="Olá! Esta é uma mensagem personalizada..."
@@ -120,33 +133,42 @@ export function SendMessagesPage() {
                   onChange={(e) => setMessage(e.target.value)}
                 ></textarea>
               </div>
-              
-              <div className="p-6 border-2 border-dashed border-slate-800 rounded-2xl flex items-center justify-center gap-3 text-slate-500 hover:border-indigo-500 hover:text-indigo-400 cursor-pointer transition-all group">
-                <ImageIcon className="group-hover:scale-110 transition-transform" /> 
-                <span className="text-sm font-medium">Anexar imagem ao disparo</span>
-              </div>
             </div>
 
             {logs.length > 0 && (
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 h-64 overflow-y-auto space-y-2">
-                <h3 className="text-sm font-bold text-slate-500 uppercase mb-4">Relatório de Envio</h3>
-                {logs.map((log, idx) => (
-                  <div key={idx} className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
-                    <span className="font-mono text-sm">{log.number}</span>
-                    {log.status === 'success' ? 
-                      <span className="text-green-500 text-xs flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Enviado</span> : 
-                      <span className="text-red-500 text-xs flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Erro</span>
-                    }
-                  </div>
-                ))}
-              </div>
-            )}
+  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 h-64 overflow-y-auto space-y-2">
+    <h3 className="text-sm font-bold text-slate-500 uppercase mb-4">Relatório de Envio</h3>
+
+    {logs.map((log, idx) => (
+      <div 
+        key={`${log.number}-${idx}`} 
+        className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50"
+      >
+        <span className="font-mono text-sm truncate max-w-[180px]">
+          {log.number}
+        </span>
+        <div className="flex items-center gap-2">
+          {log.status === 'success' ? (
+            <span className="text-green-500 text-xs flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Enviado
+            </span>
+          ) : (
+            <span className="text-red-500 text-xs flex items-center gap-1">
+              <AlertCircle className="w-3 h-3" /> 
+              {log.message || 'Erro'}
+            </span>
+          )}
+        </div>
+      </div>
+    ))}
+  </div>
+)}
           </div>
 
           <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl space-y-6 shadow-xl h-fit">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-3">Selecione a Instância</label>
-              <select 
+              <select
                 disabled={isSending}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl py-4 px-4 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
                 value={selectedInstance}
@@ -162,24 +184,22 @@ export function SendMessagesPage() {
 
             <div>
               <label className="flex items-center gap-2 text-sm font-medium text-slate-300 mb-3"><Users className="w-4 h-4 text-indigo-400" /> Lista de Contatos</label>
-              <textarea 
+              <textarea
                 disabled={isSending}
                 className="w-full h-48 bg-slate-800 border border-slate-700 rounded-xl p-4 text-xs font-mono focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
                 placeholder="Ex:&#10;5511999999999&#10;5511888888888"
                 value={numbers}
                 onChange={(e) => setNumbers(e.target.value)}
               ></textarea>
-              <p className="text-[10px] text-slate-500 mt-2 italic">* Insira o código do país + DDD (ex: 5511...)</p>
             </div>
 
-            <button 
+            <button
               onClick={startBulkSend}
               disabled={isSending || instances.length === 0}
-              className={`w-full py-5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-3 transition-all transform active:scale-95 ${
-                isSending 
-                ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
-                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30'
-              }`}
+              className={`w-full py-5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-3 transition-all transform active:scale-95 ${isSending
+                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30'
+                }`}
             >
               {isSending ? (
                 <>
@@ -193,15 +213,6 @@ export function SendMessagesPage() {
                 </>
               )}
             </button>
-
-            {isSending && (
-              <button 
-                onClick={() => stopSignal.current = true}
-                className="w-full py-2 text-xs text-red-500 hover:underline"
-              >
-                Parar envio após o atual
-              </button>
-            )}
           </div>
         </div>
       </main>

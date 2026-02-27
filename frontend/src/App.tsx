@@ -5,6 +5,8 @@ import { DashboardPage } from './pages/Dashboard';
 import { AdminPage } from './pages/Admin';
 import type { JSX } from 'react';
 import { SendMessagesPage } from './pages/SendMessages';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const PrivateRoute = ({ children }: { children: JSX.Element }) => {
   const token = localStorage.getItem('@DynamicShots:token');
@@ -25,6 +27,7 @@ const AdminRoute = ({ children }: { children: JSX.Element }) => {
 function App() {
   return (
     <BrowserRouter>
+      <ToastContainer theme="dark" position="top-right" />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
