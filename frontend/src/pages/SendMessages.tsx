@@ -14,7 +14,6 @@ export function SendMessagesPage() {
 
   const [isSending, setIsSending] = useState(false);
 
-  // CORREÇÃO: Agora declaramos os setters que estavam faltando
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [logs, setLogs] = useState<Array<{ number: string; status: 'success' | 'error'; message?: string }>>([]);
 
@@ -52,7 +51,6 @@ export function SendMessagesPage() {
     }
 
     setIsSending(true);
-    // Resetar logs e progresso antes de iniciar
     setLogs([]);
     setProgress({ current: 0, total: list.length });
 
@@ -144,7 +142,7 @@ export function SendMessagesPage() {
         key={`${log.number}-${idx}`} 
         className="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700/50"
       >
-        <span className="font-mono text-sm truncate max-w-[180px]">
+        <span className="font-mono text-sm truncate max-w-45">
           {log.number}
         </span>
         <div className="flex items-center gap-2">
