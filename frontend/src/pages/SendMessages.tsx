@@ -7,12 +7,14 @@ import api from '../api/api';
 export function SendMessagesPage() {
   const navigate = useNavigate();
 
-  const [instances, setInstances] = useState<any[]>([]);
+  const [instances, setInstances] = useState<any[]>([]); // instances now include displayName and busy
   const [selectedInstance, setSelectedInstance] = useState('');
   const [message, setMessage] = useState('');
   const [numbers, setNumbers] = useState('');
 
   const [isSending, setIsSending] = useState(false);
+  // track busy state of selected instance
+  const selectedBusy = instances.find((i) => i.id === selectedInstance)?.busy;
 
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [logs, setLogs] = useState<Array<{ number: string; status: 'success' | 'error'; message?: string }>>([]);
@@ -173,7 +175,11 @@ export function SendMessagesPage() {
                 onChange={(e) => setSelectedInstance(e.target.value)}
               >
                 {instances.length > 0 ? (
-                  instances.map(i => <option key={i.id} value={i.id}>{i.name}</option>)
+                  instances.map(i => (
+                    <option key={i.id} value={i.id} disabled={i.busy}>
+                      {i.displayName || i.name}{i.busy ? ' (ocupada)' : ''}
+                    </option>
+                  ))
                 ) : (
                   <option>Nenhuma conexão ativa</option>
                 )}
@@ -193,7 +199,7 @@ export function SendMessagesPage() {
 
             <button
               onClick={startBulkSend}
-              disabled={isSending || instances.length === 0}
+              disabled={isSending || instances.length === 0 || selectedBusy}
               className={`w-full py-5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-3 transition-all transform active:scale-95 ${isSending
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                   : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/30'

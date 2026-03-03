@@ -22,15 +22,17 @@ model User {
 }
 
 model Instance {
-  id         String     @id @default(uuid())
-  name       String     
-  status     String     @default("DISCONNECTED") 
-  whatsappId String?    @unique 
-  token      String     @unique @default(uuid()) 
-  owner      User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  ownerId    String
-  campaigns  Campaign[]
-  createdAt  DateTime   @default(now())
+  id          String     @id @default(uuid())
+  name        String     // internal identifier used by Evolution API
+  displayName String?    // friendly label shown in UI
+  status      String     @default("DISCONNECTED") 
+  whatsappId  String?    @unique 
+  token       String     @unique @default(uuid()) 
+  owner       User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId     String
+  campaigns   Campaign[]
+  busy        Boolean    @default(false) // indicates an ongoing send
+  createdAt   DateTime   @default(now())
 }
 
 model Campaign {

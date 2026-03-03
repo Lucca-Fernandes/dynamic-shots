@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { Plus, LayoutDashboard, Smartphone, LogOut, Loader2, CheckCircle2, XCircle, ShieldCheck, X, Send, QrCode, Trash2 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/api';
+import { toast } from 'react-toastify';
 
 interface Instance {
   id: string;
-  name: string;
+  name: string;                // internal identifier
+  displayName?: string;        // user-friendly label
   status: string;
+  busy?: boolean;
 }
 
 export function DashboardPage() {
@@ -22,6 +25,9 @@ export function DashboardPage() {
   const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const userJson = localStorage.getItem('@DynamicShots:user');
   const user = userJson ? JSON.parse(userJson) : null;
@@ -37,6 +43,7 @@ export function DashboardPage() {
       setInstances(response.data);
     } catch (err) {
       console.error('Erro ao buscar instâncias');
+      toast.error('Erro ao buscar instâncias');
     } finally {
       setLoading(false);
     }
@@ -51,23 +58,41 @@ export function DashboardPage() {
       setNewInstanceName('');
       setIsModalOpen(false);
       fetchInstances();
+      toast.success('Instância criada com sucesso');
     } catch (err) {
-      alert('Erro ao criar instância');
+      toast.error('Erro ao criar instância');
     } finally {
       setIsCreating(false);
     }
   }
 
-  async function handleDeleteInstance(id: string) {
-    if (!confirm("Tem certeza que deseja excluir esta instância? Isso removerá a conexão no WhatsApp também.")) return;
-    try {
-      await api.delete(`/instances/${id}`);
-      fetchInstances();
-    } catch (err) {
-      alert("Erro ao excluir instância");
-    }
+  function promptDeleteInstance(id: string) {
+    setPendingDeleteId(id);
+    setIsDeleteModalOpen(true);
   }
 
+  function cancelDelete() {
+    setPendingDeleteId(null);
+    setIsDeleteModalOpen(false);
+  }
+
+  async function confirmDeleteInstance() {
+    if (!pendingDeleteId) return;
+
+    setIsDeleting(true);
+
+    try {
+      await api.delete(`/instances/${pendingDeleteId}`);
+      setInstances(prev => prev.filter(i => i.id !== pendingDeleteId));
+      toast.success("Instância removida com sucesso");
+    } catch (err) {
+      toast.error("Erro ao remover instância");
+    } finally {
+      setIsDeleting(false);
+      setPendingDeleteId(null);
+      setIsDeleteModalOpen(false);
+    }
+  }
   async function handleConnect(id: string) {
     setActiveInstanceId(id);
     setQrCodeData(null);
@@ -78,7 +103,7 @@ export function DashboardPage() {
         setQrCodeData(response.data.qrcode);
       }
     } catch (err: any) {
-      alert("Erro ao gerar QR Code. Tente novamente.");
+      toast.error('Erro ao gerar QR Code. Tente novamente.');
       setIsQrModalOpen(false);
     }
   }
@@ -95,6 +120,7 @@ export function DashboardPage() {
       setQrCodeData(null);
 
       fetchInstances();
+      toast.success('Sincronização concluída com sucesso');
 
     } catch (err) {
       console.error("Erro na sincronização", err);
@@ -166,7 +192,8 @@ export function DashboardPage() {
                 </div>
 
                 <div className="flex-1">
-                  <h3 className="text-lg font-bold truncate">{instance.name}</h3>
+                  <h3 className="text-lg font-bold truncate">{instance.displayName || instance.name}</h3>
+                  {instance.busy && <p className="text-xs text-yellow-400 mb-1">Enviando...</p>}
                   <p className="text-[10px] text-slate-500 mb-6 font-mono opacity-50">ID: {instance.id}</p>
                 </div>
 
@@ -181,7 +208,7 @@ export function DashboardPage() {
                   </button>
 
                   <button
-                    onClick={() => handleDeleteInstance(instance.id)}
+                    onClick={() => promptDeleteInstance(instance.id)}
                     className="flex-1 py-3 bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-500 rounded-xl transition-all flex justify-center items-center border border-transparent hover:border-red-500/30"
                     title="Excluir"
                   >
@@ -199,6 +226,7 @@ export function DashboardPage() {
           <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl max-w-sm w-full">
             <h2 className="text-xl font-bold mb-6">Nova Instância</h2>
             <form onSubmit={handleCreateInstance}>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Nome da instância</label>
               <input
                 autoFocus
                 type="text"
@@ -248,6 +276,22 @@ export function DashboardPage() {
             >
               {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Já escaneei'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl max-w-sm w-full">
+            <h2 className="text-xl font-bold mb-4">Confirmar Exclusão</h2>
+            <p className="text-slate-400 mb-6">Tem certeza que deseja excluir esta instância? Isso removerá a conexão no WhatsApp também.</p>
+
+            <div className="flex gap-3">
+              <button type="button" onClick={cancelDelete} className="flex-1 py-3 text-slate-400">Cancelar</button>
+              <button onClick={confirmDeleteInstance} disabled={isDeleting} className="flex-1 bg-red-600 py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2">
+                {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Excluir'}
+              </button>
+            </div>
           </div>
         </div>
       )}
