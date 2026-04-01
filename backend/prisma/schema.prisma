@@ -25,9 +25,9 @@ model Instance {
   id          String     @id @default(uuid())
   name        String     // internal identifier used by Evolution API
   displayName String?    // friendly label shown in UI
-  status      String     @default("DISCONNECTED") 
-  whatsappId  String?    @unique 
-  token       String     @unique @default(uuid()) 
+  status      String     @default("DISCONNECTED")
+  whatsappId  String?    @unique
+  token       String     @unique @default(uuid())
   owner       User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId     String
   campaigns   Campaign[]
@@ -39,11 +39,17 @@ model Campaign {
   id          String         @id @default(uuid())
   name        String
   message     String         @db.Text
-  status      String         @default("IDLE") 
+  mediaType   String         @default("text") // text, image, video, audio, document
+  mediaUrl    String?        // URL or base64 of media to send
+  status      String         @default("IDLE") // IDLE, SENDING, PAUSED, COMPLETED, CANCELLED
+  delayMin    Int            @default(20)
+  delayMax    Int            @default(40)
   scheduledTo DateTime?
   totalLeads  Int            @default(0)
   sentCount   Int            @default(0)
   errorCount  Int            @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
   owner       User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId     String
   instance    Instance       @relation(fields: [instanceId], references: [id])
@@ -57,12 +63,12 @@ model Lead {
   id         String   @id @default(uuid())
   phone      String
   name       String?
-  variables  Json?    
-  status     String   @default("PENDING") 
+  variables  Json?
+  status     String   @default("PENDING") // PENDING, SENDING, SENT, FAILED
   errorMsg   String?
   sentAt     DateTime?
   campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   campaignId String
 
-  @@index([status]) 
+  @@index([campaignId, status])
 }

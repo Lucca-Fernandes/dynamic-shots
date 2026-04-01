@@ -1,61 +1,66 @@
 import { Request, Response } from 'express';
-import axios from 'axios';
-import { prisma } from '../lib/prisma'; 
+import { prisma } from '../lib/prisma';
 
 export async function bulkSend(req: Request, res: Response) {
-  const { instanceId, message, numbers } = req.body;
+  const { instanceId, message, leads, numbers, delayMin = 20, delayMax = 40, mediaType = 'text', mediaUrl } = req.body;
+
+  let normalizedLeads: { phone: string; name?: string; variables?: Record<string, string> }[];
+  if (Array.isArray(leads) && leads.length > 0) {
+    normalizedLeads = leads.map((lead: any) => {
+      const { phone, name, nome, variables, ...rest } = lead;
+      return {
+        phone: String(phone || '').replace(/\D/g, ''),
+        name: name || nome,
+        variables: { ...rest, ...(variables || {}), ...(nome ? { nome } : {}), ...(name ? { name } : {}) }
+      };
+    });
+  } else if (Array.isArray(numbers) && numbers.length > 0) {
+    normalizedLeads = numbers.map((n: string) => ({ phone: n.replace(/\D/g, '') }));
+  } else {
+    return res.status(400).json({ error: 'Envie "leads" ou "numbers" no body' });
+  }
+
+  normalizedLeads = normalizedLeads.filter(l => l.phone.length >= 10);
+  if (normalizedLeads.length === 0) {
+    return res.status(400).json({ error: 'Nenhum lead valido encontrado' });
+  }
 
   try {
-    const instance = await prisma.instance.findUnique({
-      where: { id: instanceId }
+    const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
+    if (!instance) return res.status(404).json({ error: "Instancia nao encontrada" });
+    if ((req as any).userId !== instance.ownerId) {
+      return res.status(403).json({ error: 'Nao autorizado' });
+    }
+
+    const minDelay = Math.max(10, Math.min(120, Number(delayMin) || 20));
+    const maxDelay = Math.max(minDelay, Math.min(120, Number(delayMax) || 40));
+
+    const campaign = await prisma.campaign.create({
+      data: {
+        name: `Disparo rapido - ${new Date().toLocaleString('pt-BR')}`,
+        message,
+        mediaType,
+        mediaUrl: mediaUrl || null,
+        delayMin: minDelay,
+        delayMax: maxDelay,
+        totalLeads: normalizedLeads.length,
+        status: 'SENDING',
+        startedAt: new Date(),
+        ownerId: (req as any).userId,
+        instanceId,
+        leads: {
+          create: normalizedLeads.map(lead => ({
+            phone: lead.phone,
+            name: lead.name,
+            variables: lead.variables || {}
+          }))
+        }
+      }
     });
 
-    if (!instance) return res.status(404).json({ error: "Instância não encontrada" });
-    // verify ownership (assuming req.userId is populated by middleware)
-    if ((req as any).userId !== instance.ownerId) {
-      return res.status(403).json({ error: 'Não autorizado' });
-    }
-
-    if (instance.busy) {
-      return res.status(409).json({ error: 'Outro disparo já está em andamento para esta instância' });
-    }
-
-    // mark as busy before starting
-    await prisma.instance.update({ where: { id: instanceId }, data: { busy: true } });
-
-    res.status(202).json({ message: "Disparo iniciado com sucesso" });
-
-    // execute sending asynchronously
-    (async () => {
-      try {
-        for (const number of numbers) {
-          try {
-            const cleanNumber = number.replace(/\D/g, '');
-            
-            await axios.post(
-              `${process.env.EVOLUTION_API_URL}/message/sendText/${instance.name}`,
-              {
-                number: `${cleanNumber}@s.whatsapp.net`,
-                textMessage: { text: message }
-              },
-              { headers: { 'apikey': process.env.EVOLUTION_API_KEY } }
-            );
-
-            console.log(`Mensagem enviada para: ${cleanNumber}`);
-          } catch (err) {
-            console.error(`Erro ao enviar para ${number}`);
-          }
-
-          await new Promise(resolve => setTimeout(resolve, 30000));
-        }
-      } finally {
-        // always clear busy flag
-        await prisma.instance.update({ where: { id: instanceId }, data: { busy: false } });
-      }
-    })();
+    return res.status(202).json({ message: "Disparo iniciado com sucesso", campaignId: campaign.id });
   } catch (error) {
     console.error("Erro no controlador de disparo:", error);
-    // ensure busy flag cleared on unexpected error
-    await prisma.instance.update({ where: { id: instanceId }, data: { busy: false } }).catch(() => {});
+    return res.status(500).json({ error: 'Erro interno no disparo' });
   }
 }

@@ -4,12 +4,13 @@ import axios from 'axios';
 import crypto from 'crypto';
 
 export const createInstance = async (req: any, res: Response) => {
-  const { name: displayName } = req.body; 
+  const { name: displayName } = req.body;
   const userId = req.userId;
 
-  if (!displayName) return res.status(400).json({ error: 'Nome da instância é obrigatório' });
+  if (!displayName) return res.status(400).json({ error: 'Nome da instancia e obrigatorio' });
 
   const systemName = `${userId}-${crypto.randomUUID()}`;
+  const webhookUrl = `${process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`}/webhooks/evolution`;
 
   try {
     await axios.post(`${process.env.EVOLUTION_API_URL}/instance/create`, {
@@ -19,54 +20,42 @@ export const createInstance = async (req: any, res: Response) => {
       headers: { 'apikey': process.env.EVOLUTION_API_KEY }
     });
 
+    // v1.6.x: webhook registrado separadamente
+    await axios.post(`${process.env.EVOLUTION_API_URL}/webhook/set/${systemName}`, {
+      enabled: true,
+      url: webhookUrl,
+      events: ['CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'QRCODE_UPDATED']
+    }, {
+      headers: { 'apikey': process.env.EVOLUTION_API_KEY }
+    }).catch(err => {
+      console.error('Aviso: falha ao registrar webhook:', err.message);
+    });
+
     const instance = await prisma.instance.create({
-      data: {
-        name: systemName,
-        displayName,
-        ownerId: userId,
-        status: 'DISCONNECTED'
-      }
+      data: { name: systemName, displayName, ownerId: userId, status: 'DISCONNECTED' }
     });
 
     return res.status(201).json(instance);
   } catch (error: any) {
     if (error.response?.data?.message?.includes("already exists")) {
-       const instance = await prisma.instance.create({
-         data: {
-           name: systemName,
-           displayName: req.body.name,
-           ownerId: req.userId,
-           status: 'DISCONNECTED'
-         }
-       });
-       return res.status(201).json(instance);
+      const instance = await prisma.instance.create({
+        data: { name: systemName, displayName: req.body.name, ownerId: req.userId, status: 'DISCONNECTED' }
+      });
+      return res.status(201).json(instance);
     }
-    return res.status(500).json({ error: 'Erro ao criar instância' });
+    return res.status(500).json({ error: 'Erro ao criar instancia' });
   }
 };
 
 export const getMyInstances = async (req: any, res: Response) => {
   try {
-    const instances = await prisma.instance.findMany({ where: { ownerId: req.userId } });
-    
-    const syncedInstances = await Promise.all(instances.map(async (inst) => {
-      try {
-        const resp = await axios.get(`${process.env.EVOLUTION_API_URL}/instance/connectionState/${inst.name}`, {
-          headers: { 'apikey': process.env.EVOLUTION_API_KEY }
-        });
-        const status = resp.data.instance.state === 'open' ? 'CONNECTED' : 'DISCONNECTED';
-        if (status !== inst.status) {
-          return await prisma.instance.update({ where: { id: inst.id }, data: { status } });
-        }
-        return inst;
-      } catch {
-        return inst;
-      }
-    }));
-
-    return res.json(syncedInstances);
-  } catch (error) {
-    return res.status(500).json({ error: 'Erro ao buscar instâncias' });
+    const instances = await prisma.instance.findMany({
+      where: { ownerId: req.userId },
+      orderBy: { createdAt: 'desc' }
+    });
+    return res.json(instances);
+  } catch {
+    return res.status(500).json({ error: 'Erro ao buscar instancias' });
   }
 };
 
@@ -74,14 +63,14 @@ export const getQRCode = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
     const instance = await prisma.instance.findUnique({ where: { id } });
-    if (!instance || instance.ownerId !== req.userId) return res.status(404).json({ error: 'Não encontrada' });
+    if (!instance || instance.ownerId !== req.userId) return res.status(404).json({ error: 'Nao encontrada' });
 
     const response = await axios.get(
       `${process.env.EVOLUTION_API_URL}/instance/connect/${instance.name}`,
       { headers: { 'apikey': process.env.EVOLUTION_API_KEY } }
     );
     return res.json({ qrcode: response.data.base64 });
-  } catch (error: any) {
+  } catch {
     return res.status(500).json({ error: 'Erro ao gerar QR Code' });
   }
 };
@@ -90,21 +79,17 @@ export const syncInstanceStatus = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
     const instance = await prisma.instance.findUnique({ where: { id } });
-    if (!instance || instance.ownerId !== req.userId) return res.status(404).json({ error: 'Instância não encontrada' });
+    if (!instance || instance.ownerId !== req.userId) return res.status(404).json({ error: 'Instancia nao encontrada' });
 
     const response = await axios.get(
       `${process.env.EVOLUTION_API_URL}/instance/connectionState/${instance.name}`,
       { headers: { 'apikey': process.env.EVOLUTION_API_KEY } }
     );
 
-    const statusMap: any = { "open": "CONNECTED", "close": "DISCONNECTED", "connecting": "CONNECTING" };
+    const statusMap: Record<string, string> = { open: 'CONNECTED', close: 'DISCONNECTED', connecting: 'CONNECTING' };
     const realStatus = statusMap[response.data.instance.state] || 'DISCONNECTED';
 
-    const updated = await prisma.instance.update({
-      where: { id },
-      data: { status: realStatus }
-    });
-
+    const updated = await prisma.instance.update({ where: { id }, data: { status: realStatus } });
     return res.json(updated);
   } catch (error: any) {
     console.error("Erro no Sync:", error.message);
@@ -117,24 +102,20 @@ export const deleteInstance = async (req: any, res: Response) => {
     const { id } = req.params;
     const instance = await prisma.instance.findUnique({ where: { id } });
 
-    if (!instance) return res.json({ message: "Já removido" });
+    if (!instance) return res.json({ message: "Ja removido" });
+    if (instance.ownerId !== req.userId) return res.status(403).json({ error: 'Nao autorizado' });
 
-    try {
-        await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/logout/${instance.name}`, {
-            headers: { 'apikey': process.env.EVOLUTION_API_KEY }
-        }).catch(() => null); 
+    await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/logout/${instance.name}`, {
+      headers: { 'apikey': process.env.EVOLUTION_API_KEY }
+    }).catch(() => null);
 
-        await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/delete/${instance.name}`, {
-            headers: { 'apikey': process.env.EVOLUTION_API_KEY }
-        }).catch(() => null); 
-    } catch (err) {
-        console.error("Erro na comunicação com Evolution:", err);
-    }
+    await axios.delete(`${process.env.EVOLUTION_API_URL}/instance/delete/${instance.name}`, {
+      headers: { 'apikey': process.env.EVOLUTION_API_KEY }
+    }).catch(() => null);
 
     await prisma.instance.delete({ where: { id } });
     return res.json({ message: "Deletado com sucesso" });
-    
-  } catch (error) {
-    return res.status(500).json({ error: 'Erro ao processar exclusão' });
+  } catch {
+    return res.status(500).json({ error: 'Erro ao processar exclusao' });
   }
 };

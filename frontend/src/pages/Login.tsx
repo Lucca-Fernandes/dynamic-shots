@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Rocket, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import api from '../api/api';
+import { useAuth } from '../contexts/AuthContext';
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,15 +18,11 @@ export function LoginPage() {
     setError('');
 
     try {
-      const response = await api.post('/auth/login', { email, password });
-      
-      localStorage.setItem('@DynamicShots:token', response.data.token);
-      localStorage.setItem('@DynamicShots:user', JSON.stringify(response.data.user));
-
+      await login(email, password);
       toast.success('Login realizado com sucesso');
       navigate('/dashboard');
     } catch (err: any) {
-      const message = err.response?.data?.error || 'Falha na autenticação';
+      const message = err.response?.data?.error || 'Falha na autenticacao';
       setError(message);
       toast.error(message);
     } finally {

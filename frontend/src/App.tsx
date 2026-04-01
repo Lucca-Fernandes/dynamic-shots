@@ -1,71 +1,67 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { LoginPage } from './pages/Login';
-import { RegisterPage } from './pages/Register'; 
-import { DashboardPage } from './pages/Dashboard';
-import { AdminPage } from './pages/Admin';
-import type { JSX } from 'react';
-import { SendMessagesPage } from './pages/SendMessages';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Layout } from './components/Layout';
+import { LoginPage } from './pages/Login';
+import { RegisterPage } from './pages/Register';
+import { DashboardPage } from './pages/Dashboard';
+import { AdminPage } from './pages/Admin';
+import { SendMessagesPage } from './pages/SendMessages';
+import { CampaignsPage } from './pages/Campaigns';
+import { CampaignDetailPage } from './pages/CampaignDetail';
+import type { JSX } from 'react';
 
-const PrivateRoute = ({ children }: { children: JSX.Element }) => {
-  const token = localStorage.getItem('@DynamicShots:token');
+function PrivateRoute({ children }: { children: JSX.Element }) {
+  const { token } = useAuth();
   return token ? children : <Navigate to="/login" />;
-};
+}
 
-const AdminRoute = ({ children }: { children: JSX.Element }) => {
-  const token = localStorage.getItem('@DynamicShots:token');
-  const userJson = localStorage.getItem('@DynamicShots:user');
-  const user = userJson ? JSON.parse(userJson) : null;
-
-  if (!token || user?.role !== 'ADMIN') {
-    return <Navigate to="/dashboard" />;
-  }
+function AdminRoute({ children }: { children: JSX.Element }) {
+  const { token, isAdmin } = useAuth();
+  if (!token || !isAdmin) return <Navigate to="/dashboard" />;
   return children;
-};
+}
 
-function App() {
+function AppRoutes() {
   return (
-    <BrowserRouter>
-      <ToastContainer theme="dark" position="top-right" />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
-        <Route 
-          path="/dashboard" 
-          element={
-            <PrivateRoute>
-              <DashboardPage />
-            </PrivateRoute>
-          } 
-        />
-
-        <Route 
-          path="/z-admin" 
+      <Route
+        element={
+          <PrivateRoute>
+            <Layout />
+          </PrivateRoute>
+        }
+      >
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/campaigns" element={<CampaignsPage />} />
+        <Route path="/campaigns/:id" element={<CampaignDetailPage />} />
+        <Route path="/disparos" element={<SendMessagesPage />} />
+        <Route
+          path="/z-admin"
           element={
             <AdminRoute>
               <AdminPage />
             </AdminRoute>
-          } 
+          }
         />
+      </Route>
 
-        <Route 
-          path="*" 
-          element={
-          <Navigate to="/login" />
-          } 
-        />
+      <Route path="*" element={<Navigate to="/login" />} />
+    </Routes>
+  );
+}
 
-          <Route 
-            path="/disparos" 
-            element={
-            <PrivateRoute>
-            <SendMessagesPage />
-            </PrivateRoute>
-          } 
-        />
-      </Routes>
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <ToastContainer theme="dark" position="top-right" />
+        <AppRoutes />
+      </AuthProvider>
     </BrowserRouter>
   );
 }
