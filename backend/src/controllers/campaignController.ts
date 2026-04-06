@@ -42,7 +42,6 @@ export const createCampaign = async (req: any, res: Response) => {
       const filepath = path.join(UPLOADS_DIR, filename);
       fs.writeFileSync(filepath, mediaFile.buffer);
 
-      // webm -> mp3 (WhatsApp nao reproduz webm)
       const isAudio = mediaFile.mimetype.startsWith('audio/');
       if (isAudio && ['.webm', '.weba'].includes(ext.toLowerCase())) {
         try {
@@ -62,7 +61,11 @@ export const createCampaign = async (req: any, res: Response) => {
     const csvFile = files?.csv?.[0];
     if (csvFile) {
       const csvText = csvFile.buffer.toString('utf-8');
-      const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+      const parsed = Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h: string) => h.trim()
+      });
 
       if (parsed.errors.length > 0) {
         return res.status(400).json({ error: 'Erro ao processar CSV', details: parsed.errors });
@@ -84,12 +87,23 @@ export const createCampaign = async (req: any, res: Response) => {
         return { phone: phone.replace(/\D/g, ''), name: leadName, variables };
       }).filter(lead => lead.phone.length >= 10);
     } else if (req.body.leads) {
-      const rawLeads = typeof req.body.leads === 'string' ? JSON.parse(req.body.leads) : req.body.leads;
-      leadsData = rawLeads.map((lead: any) => ({
-        phone: String(lead.phone || '').replace(/\D/g, ''),
-        name: lead.name,
-        variables: lead.variables || {}
-      })).filter((lead: any) => lead.phone.length >= 10);
+      let rawLeads: any[];
+      try {
+        rawLeads = typeof req.body.leads === 'string' ? JSON.parse(req.body.leads) : req.body.leads;
+      } catch {
+        return res.status(400).json({ error: 'Formato JSON invalido no campo leads' });
+      }
+      if (!Array.isArray(rawLeads)) {
+        return res.status(400).json({ error: 'O campo leads deve ser um array' });
+      }
+      leadsData = rawLeads.map((lead: any) => {
+        const { phone, name, nome, variables, ...rest } = lead;
+        return {
+          phone: String(phone || '').replace(/\D/g, ''),
+          name: name || nome,
+          variables: { ...rest, ...(variables || {}), ...(nome ? { nome } : {}), ...(name ? { name } : {}) }
+        };
+      }).filter((lead: any) => lead.phone.length >= 10);
     }
 
     if (leadsData.length === 0) {
@@ -236,6 +250,263 @@ export const cancelCampaign = async (req: any, res: Response) => {
     return res.json(updated);
   } catch (error) {
     return res.status(500).json({ error: 'Erro ao cancelar campanha' });
+  }
+};
+
+export const updateCampaign = async (req: any, res: Response) => {
+  try {
+    const campaign = await prisma.campaign.findUnique({ where: { id: req.params.id } });
+
+    if (!campaign || campaign.ownerId !== req.userId) {
+      return res.status(404).json({ error: 'Campanha nao encontrada' });
+    }
+
+    if (campaign.status === 'SENDING') {
+      return res.status(400).json({ error: 'Nao e possivel editar campanha em andamento' });
+    }
+
+    const { name, message, mediaType, delayMin, delayMax } = req.body;
+    let { mediaUrl } = req.body;
+
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    if (files?.media?.[0] && !mediaUrl) {
+      const mediaFile = files.media[0];
+      const ext = path.extname(mediaFile.originalname) || '.bin';
+      const id = crypto.randomUUID();
+      let filename = `${id}${ext}`;
+      const filepath = path.join(UPLOADS_DIR, filename);
+      fs.writeFileSync(filepath, mediaFile.buffer);
+
+      const isAudio = mediaFile.mimetype.startsWith('audio/');
+      if (isAudio && ['.webm', '.weba'].includes(ext.toLowerCase())) {
+        try {
+          const mp3Path = convertAudioToMp3(filepath);
+          filename = path.basename(mp3Path);
+        } catch (err) {
+          console.error('Erro ao converter audio:', err);
+        }
+      }
+
+      const baseUrl = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`;
+      mediaUrl = `${baseUrl}/uploads/${filename}`;
+    }
+
+    const data: any = {};
+    if (name !== undefined) data.name = name;
+    if (message !== undefined) data.message = message;
+    if (mediaType !== undefined) data.mediaType = mediaType;
+    if (mediaUrl !== undefined) data.mediaUrl = mediaUrl || null;
+    if (delayMin !== undefined) data.delayMin = Math.max(10, Math.min(120, Number(delayMin) || 20));
+    if (delayMax !== undefined) data.delayMax = Math.max(data.delayMin || campaign.delayMin, Math.min(120, Number(delayMax) || 40));
+
+    if (data.mediaType === 'text') {
+      data.mediaUrl = null;
+    }
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaign.id },
+      data,
+      include: {
+        instance: { select: { id: true, displayName: true, name: true, status: true } }
+      }
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Erro ao atualizar campanha:', error);
+    return res.status(500).json({ error: 'Erro ao atualizar campanha' });
+  }
+};
+
+export const deleteCampaign = async (req: any, res: Response) => {
+  try {
+    const campaign = await prisma.campaign.findUnique({ where: { id: req.params.id } });
+
+    if (!campaign || campaign.ownerId !== req.userId) {
+      return res.status(404).json({ error: 'Campanha nao encontrada' });
+    }
+
+    if (campaign.status === 'SENDING') {
+      return res.status(400).json({ error: 'Pause ou cancele a campanha antes de excluir' });
+    }
+
+    await prisma.campaign.delete({ where: { id: campaign.id } });
+    return res.json({ message: 'Campanha excluida com sucesso' });
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao excluir campanha' });
+  }
+};
+
+export const addLeads = async (req: any, res: Response) => {
+  try {
+    const campaign = await prisma.campaign.findUnique({ where: { id: req.params.id } });
+
+    if (!campaign || campaign.ownerId !== req.userId) {
+      return res.status(404).json({ error: 'Campanha nao encontrada' });
+    }
+
+    if (campaign.status === 'SENDING') {
+      return res.status(400).json({ error: 'Nao e possivel adicionar leads enquanto a campanha esta enviando' });
+    }
+
+    let leadsData: { phone: string; name?: string; variables?: Record<string, string> }[] = [];
+
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const csvFile = files?.csv?.[0];
+
+    if (csvFile) {
+      const csvText = csvFile.buffer.toString('utf-8');
+      const parsed = Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h: string) => h.trim()
+      });
+
+      if (parsed.errors.length > 0) {
+        return res.status(400).json({ error: 'Erro ao processar CSV', details: parsed.errors });
+      }
+
+      leadsData = (parsed.data as Record<string, string>[]).map(row => {
+        const keys = Object.keys(row);
+        let phoneKey = keys.find(k => PHONE_COLUMN_NAMES.some(term => k.toLowerCase().includes(term)));
+        if (!phoneKey) phoneKey = keys.find(k => (row[k] || '').replace(/\D/g, '').length >= 10);
+        if (!phoneKey) phoneKey = keys[0];
+
+        const phone = row[phoneKey] || '';
+        const leadName = row.name || row.nome || row.Name || undefined;
+        const variables: Record<string, string> = {};
+        Object.entries(row).forEach(([key, value]) => { variables[key] = value; });
+
+        return { phone: phone.replace(/\D/g, ''), name: leadName, variables };
+      }).filter(lead => lead.phone.length >= 10);
+    } else if (req.body.leads) {
+      let rawLeads: any[];
+      try {
+        rawLeads = typeof req.body.leads === 'string' ? JSON.parse(req.body.leads) : req.body.leads;
+      } catch {
+        return res.status(400).json({ error: 'Formato JSON invalido no campo leads' });
+      }
+      if (!Array.isArray(rawLeads)) {
+        return res.status(400).json({ error: 'O campo leads deve ser um array' });
+      }
+      leadsData = rawLeads.map((lead: any) => {
+        const { phone, name, nome, variables, ...rest } = lead;
+        return {
+          phone: String(phone || '').replace(/\D/g, ''),
+          name: name || nome,
+          variables: { ...rest, ...(variables || {}), ...(nome ? { nome } : {}), ...(name ? { name } : {}) }
+        };
+      }).filter((lead: any) => lead.phone.length >= 10);
+    }
+
+    if (leadsData.length === 0) {
+      return res.status(400).json({ error: 'Nenhum lead valido encontrado' });
+    }
+
+    const existingLeads = await prisma.lead.findMany({
+      where: { campaignId: campaign.id },
+      select: { phone: true }
+    });
+    const existingPhones = new Set(existingLeads.map(l => l.phone));
+    const newLeads = leadsData.filter(l => !existingPhones.has(l.phone));
+
+    if (newLeads.length === 0) {
+      return res.status(400).json({ error: 'Todos os leads ja existem na campanha' });
+    }
+
+    await prisma.lead.createMany({
+      data: newLeads.map(lead => ({
+        phone: lead.phone,
+        name: lead.name,
+        variables: lead.variables || {},
+        campaignId: campaign.id,
+      }))
+    });
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { totalLeads: { increment: newLeads.length } },
+      include: { instance: { select: { id: true, displayName: true, name: true, status: true } } }
+    });
+
+    return res.json({ ...updated, addedCount: newLeads.length, duplicatesSkipped: leadsData.length - newLeads.length });
+  } catch (error) {
+    console.error('Erro ao adicionar leads:', error);
+    return res.status(500).json({ error: 'Erro ao adicionar leads' });
+  }
+};
+
+export const retryCampaign = async (req: any, res: Response) => {
+  try {
+    const campaign = await prisma.campaign.findUnique({ where: { id: req.params.id } });
+
+    if (!campaign || campaign.ownerId !== req.userId) {
+      return res.status(404).json({ error: 'Campanha nao encontrada' });
+    }
+
+    if (!['COMPLETED', 'CANCELLED', 'PAUSED'].includes(campaign.status)) {
+      return res.status(400).json({ error: 'Campanha precisa estar finalizada ou pausada para redisparar' });
+    }
+
+    const resetResult = await prisma.lead.updateMany({
+      where: { campaignId: campaign.id, status: 'FAILED' },
+      data: { status: 'PENDING', errorMsg: null, sentAt: null }
+    });
+
+    const pendingCount = await prisma.lead.count({
+      where: { campaignId: campaign.id, status: 'PENDING' }
+    });
+
+    if (pendingCount === 0) {
+      return res.status(400).json({ error: 'Nenhum lead para redisparar' });
+    }
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        status: 'SENDING',
+        completedAt: null,
+        startedAt: new Date()
+      }
+    });
+
+    return res.json({ ...updated, resetCount: resetResult.count, pendingCount });
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao redisparar campanha' });
+  }
+};
+
+export const resendCampaign = async (req: any, res: Response) => {
+  try {
+    const campaign = await prisma.campaign.findUnique({ where: { id: req.params.id } });
+
+    if (!campaign || campaign.ownerId !== req.userId) {
+      return res.status(404).json({ error: 'Campanha nao encontrada' });
+    }
+
+    if (!['COMPLETED', 'CANCELLED', 'PAUSED'].includes(campaign.status)) {
+      return res.status(400).json({ error: 'Campanha precisa estar finalizada ou pausada para redisparar' });
+    }
+
+    await prisma.lead.updateMany({
+      where: { campaignId: campaign.id },
+      data: { status: 'PENDING', errorMsg: null, sentAt: null }
+    });
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        status: 'SENDING',
+        sentCount: 0,
+        errorCount: 0,
+        completedAt: null,
+        startedAt: new Date()
+      }
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao redisparar campanha' });
   }
 };
 

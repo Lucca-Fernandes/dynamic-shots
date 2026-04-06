@@ -7,7 +7,6 @@ const POLL_INTERVAL = 5000;
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
 const activeCampaigns = new Map<string, boolean>();
 
-// Local uploads -> base64 (Evolution API no Docker nao acessa host.docker.internal)
 function resolveMediaToBase64(url: string): string | null {
   try {
     const uploadsMarker = '/uploads/';
@@ -16,9 +15,17 @@ function resolveMediaToBase64(url: string): string | null {
 
     const filename = url.substring(idx + uploadsMarker.length);
     const filepath = path.join(UPLOADS_DIR, filename);
-    if (!fs.existsSync(filepath)) return null;
 
-    return fs.readFileSync(filepath).toString('base64');
+    if (fs.existsSync(filepath)) {
+      return fs.readFileSync(filepath).toString('base64');
+    }
+
+    const mp3Path = filepath.replace(/\.[^.]+$/, '.mp3');
+    if (fs.existsSync(mp3Path)) {
+      return fs.readFileSync(mp3Path).toString('base64');
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -51,9 +58,17 @@ async function sendMessage(instanceName: string, phone: string, message: string,
       mediaMessage: { mediatype: 'video', caption: message, media: resolvedMedia }
     }, { headers });
   } else if (mediaType === 'audio') {
-    await axios.post(`${baseUrl}/message/sendMedia/${instanceName}`, {
+    if (message && message.trim()) {
+      await axios.post(`${baseUrl}/message/sendText/${instanceName}`, {
+        number,
+        textMessage: { text: message }
+      }, { headers });
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    await axios.post(`${baseUrl}/message/sendWhatsAppAudio/${instanceName}`, {
       number,
-      mediaMessage: { mediatype: 'audio', media: resolvedMedia }
+      options: { presence: 'recording', encoding: true },
+      audioMessage: { audio: resolvedMedia }
     }, { headers });
   } else if (mediaType === 'document') {
     await axios.post(`${baseUrl}/message/sendMedia/${instanceName}`, {
@@ -79,6 +94,28 @@ async function processOneLead(campaign: any, instance: any) {
     return false;
   }
 
+  const owner = await prisma.user.findUnique({
+    where: { id: campaign.ownerId },
+    select: { maxDailyShots: true, dailyShotsSent: true, dailyShotsDate: true, isSuspended: true }
+  });
+  if (owner?.isSuspended) {
+    await prisma.campaign.update({ where: { id: campaign.id }, data: { status: 'PAUSED' } });
+    activeCampaigns.delete(campaign.id);
+    console.log(`Campanha ${campaign.id} pausada: usuario suspenso`);
+    return false;
+  }
+  const todayCheck = new Date();
+  todayCheck.setHours(0, 0, 0, 0);
+  const ownerDate = owner?.dailyShotsDate ? new Date(owner.dailyShotsDate) : null;
+  const isSameDay = ownerDate && new Date(ownerDate).setHours(0, 0, 0, 0) === todayCheck.getTime();
+  const currentDaily = isSameDay ? (owner?.dailyShotsSent || 0) : 0;
+  if (owner && currentDaily >= owner.maxDailyShots) {
+    await prisma.campaign.update({ where: { id: campaign.id }, data: { status: 'PAUSED' } });
+    activeCampaigns.delete(campaign.id);
+    console.log(`Campanha ${campaign.id} pausada: limite diario atingido (${owner.maxDailyShots})`);
+    return false;
+  }
+
   await prisma.lead.update({ where: { id: lead.id }, data: { status: 'SENDING' } });
 
   try {
@@ -86,7 +123,9 @@ async function processOneLead(campaign: any, instance: any) {
     const vars = (lead.variables as Record<string, string>) || {};
     const allVars: Record<string, string> = { phone: lead.phone, name: lead.name || '', ...vars };
     Object.entries(allVars).forEach(([key, value]) => {
-      finalMessage = finalMessage.replace(new RegExp(`\\{${key}\\}`, 'g'), value || '');
+      const trimmedKey = key.trim();
+      const escaped = trimmedKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      finalMessage = finalMessage.replace(new RegExp(`\\{${escaped}\\}`, 'g'), value || '');
     });
 
     await sendMessage(instance.name, lead.phone, finalMessage, campaign.mediaType, campaign.mediaUrl);
@@ -98,6 +137,20 @@ async function processOneLead(campaign: any, instance: any) {
     await prisma.campaign.update({
       where: { id: campaign.id },
       data: { sentCount: { increment: 1 } }
+    });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const user = await prisma.user.findUnique({ where: { id: campaign.ownerId }, select: { dailyShotsDate: true } });
+    const userDailyDate = user?.dailyShotsDate ? new Date(user.dailyShotsDate) : null;
+    const isToday = userDailyDate && userDailyDate.setHours(0, 0, 0, 0) === today.getTime();
+    await prisma.user.update({
+      where: { id: campaign.ownerId },
+      data: {
+        totalShotsSent: { increment: 1 },
+        dailyShotsSent: isToday ? { increment: 1 } : 1,
+        dailyShotsDate: new Date()
+      }
     });
   } catch (err: any) {
     const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
