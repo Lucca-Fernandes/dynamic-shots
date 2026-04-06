@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Plus, Smartphone, Loader2, CheckCircle2, XCircle, X, QrCode, Trash2 } from 'lucide-react';
 import api from '../api/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../contexts/AuthContext';
+import { LimitBanner } from '../components/LimitBanner';
 
 interface Instance {
   id: string;
@@ -87,6 +88,12 @@ export function DashboardPage() {
     }
   }
 
+  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function stopQrPolling() {
+    if (qrPollRef.current) { clearInterval(qrPollRef.current); qrPollRef.current = null; }
+  }
+
   async function handleConnect(id: string) {
     setActiveInstanceId(id);
     setQrCodeData(null);
@@ -99,11 +106,28 @@ export function DashboardPage() {
     } catch {
       toast.error('Erro ao gerar QR Code. Tente novamente.');
       setIsQrModalOpen(false);
+      return;
     }
+
+    stopQrPolling();
+    qrPollRef.current = setInterval(async () => {
+      try {
+        const res = await api.get(`/instances/${id}/sync`);
+        if (res.data.status === 'CONNECTED') {
+          stopQrPolling();
+          setIsQrModalOpen(false);
+          setActiveInstanceId(null);
+          setQrCodeData(null);
+          fetchInstances();
+          toast.success('WhatsApp conectado!');
+        }
+      } catch { /* ignore */ }
+    }, 3000);
   }
 
   async function handleConfirmScan() {
     if (!activeInstanceId) return;
+    stopQrPolling();
     setIsSyncing(true);
     try {
       await api.get(`/instances/${activeInstanceId}/sync`);
@@ -122,6 +146,7 @@ export function DashboardPage() {
 
   return (
     <>
+      <LimitBanner />
       <div className="flex justify-between items-center mb-10">
         <div>
           <h1 className="text-3xl font-bold">Minhas Instancias</h1>
@@ -214,7 +239,7 @@ export function DashboardPage() {
         <div className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 p-8 rounded-[40px] max-w-sm w-full text-center relative">
             <button
-              onClick={() => { setIsQrModalOpen(false); setActiveInstanceId(null); setQrCodeData(null); }}
+              onClick={() => { stopQrPolling(); setIsQrModalOpen(false); setActiveInstanceId(null); setQrCodeData(null); }}
               className="absolute top-6 right-6 text-slate-500 hover:text-white"
             >
               <X />

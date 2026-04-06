@@ -9,6 +9,30 @@ export const createInstance = async (req: any, res: Response) => {
 
   if (!displayName) return res.status(400).json({ error: 'Nome da instancia e obrigatorio' });
 
+  const existingName = await prisma.instance.findFirst({
+    where: { ownerId: userId, displayName: displayName.trim() }
+  });
+  if (existingName) {
+    return res.status(400).json({ error: 'Voce ja possui uma instancia com esse nome.' });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { permissions: true, role: true, isSuspended: true }
+  });
+  if (user?.isSuspended) {
+    return res.status(403).json({ error: 'Sua conta esta suspensa.' });
+  }
+  if (user && user.role !== 'ADMIN') {
+    const perms = (user.permissions as Record<string, boolean>) || {};
+    if (!perms.multiInstance) {
+      const count = await prisma.instance.count({ where: { ownerId: userId } });
+      if (count >= 1) {
+        return res.status(403).json({ error: 'Voce so pode ter uma instancia. Contate o administrador para liberar multiplas instancias.' });
+      }
+    }
+  }
+
   const systemName = `${userId}-${crypto.randomUUID()}`;
   const webhookUrl = `${process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 5000}`}/webhooks/evolution`;
 
@@ -20,7 +44,6 @@ export const createInstance = async (req: any, res: Response) => {
       headers: { 'apikey': process.env.EVOLUTION_API_KEY }
     });
 
-    // v1.6.x: webhook registrado separadamente
     await axios.post(`${process.env.EVOLUTION_API_URL}/webhook/set/${systemName}`, {
       enabled: true,
       url: webhookUrl,
