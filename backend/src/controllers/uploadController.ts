@@ -11,6 +11,13 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
+const ALLOWED_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.webp',
+  '.mp4', '.avi', '.mov', '.mkv', '.webm',
+  '.mp3', '.ogg', '.wav', '.aac', '.weba', '.m4a',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip', '.rar',
+]);
+
 function convertAudioToMp3(inputPath: string): string {
   const outputPath = inputPath.replace(/\.[^.]+$/, '.mp3');
   execFileSync(ffmpegPath, ['-i', inputPath, '-y', '-codec:a', 'libmp3lame', '-q:a', '2', outputPath]);
@@ -24,7 +31,12 @@ export const uploadMedia = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
 
-    const ext = path.extname(req.file.originalname) || '.bin';
+    const ext = path.extname(req.file.originalname).toLowerCase() || '.bin';
+
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      return res.status(400).json({ error: 'Tipo de arquivo nao permitido' });
+    }
+
     const id = crypto.randomUUID();
     const filename = `${id}${ext}`;
     const filepath = path.join(UPLOADS_DIR, filename);
@@ -32,10 +44,8 @@ export const uploadMedia = async (req: Request, res: Response) => {
     fs.writeFileSync(filepath, req.file.buffer);
 
     let finalFilename = filename;
-    const isAudio = req.file.mimetype.startsWith('audio/') || ext.toLowerCase() === '.webm';
-    const needsConversion = ['.webm', '.weba', '.ogg'].includes(ext.toLowerCase());
-
-    console.log(`Upload: ${req.file.originalname} | mime: ${req.file.mimetype} | ext: ${ext} | convert: ${isAudio && needsConversion}`);
+    const isAudio = req.file.mimetype.startsWith('audio/') || ext === '.webm';
+    const needsConversion = ['.webm', '.weba', '.ogg'].includes(ext);
 
     if (isAudio && needsConversion) {
       try {

@@ -13,8 +13,29 @@ import { startCampaignWorker, recoverFromCrash } from './workers/campaignWorker'
 dotenv.config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error('CORS not allowed'));
+  },
+  credentials: true
+}));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
@@ -25,8 +46,8 @@ app.use('/campaigns', campaignRoutes);
 app.use('/webhooks', webhookRoutes);
 app.use('/upload', uploadRoutes);
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Dynamic Shots rodando!' });
+app.get('/health', (_req, res) => {
+  res.json({ status: 'OK' });
 });
 
 const PORT = process.env.PORT || 5000;
@@ -34,7 +55,7 @@ const PORT = process.env.PORT || 5000;
 async function bootstrap() {
   await recoverFromCrash();
   app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
   });
   startCampaignWorker();
 }
