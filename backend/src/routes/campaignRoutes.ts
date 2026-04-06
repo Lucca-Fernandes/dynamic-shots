@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { authMiddleware } from '../middlewares/authMiddleware';
+import { authMiddleware, permissionMiddleware, dailyLimitMiddleware } from '../middlewares/authMiddleware';
 import {
   createCampaign, getCampaigns, getCampaign,
-  startCampaign, pauseCampaign, cancelCampaign, getCampaignLeads
+  startCampaign, pauseCampaign, cancelCampaign,
+  updateCampaign, deleteCampaign, addLeads, retryCampaign, resendCampaign, getCampaignLeads
 } from '../controllers/campaignController';
 import { campaignProgress } from '../controllers/sseController';
 
@@ -13,20 +14,24 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }
 });
 
-// SSE: auth via query param (EventSource nao suporta headers)
 router.get('/:id/progress', campaignProgress);
 
 router.use(authMiddleware);
 
 router.get('/', getCampaigns);
-router.post('/', upload.fields([
+router.post('/', permissionMiddleware('campaigns'), upload.fields([
   { name: 'csv', maxCount: 1 },
   { name: 'media', maxCount: 1 }
 ]), createCampaign);
 router.get('/:id', getCampaign);
-router.post('/:id/start', startCampaign);
+router.put('/:id', permissionMiddleware('campaigns'), upload.fields([{ name: 'media', maxCount: 1 }]), updateCampaign);
+router.delete('/:id', deleteCampaign);
+router.post('/:id/start', permissionMiddleware('campaigns'), dailyLimitMiddleware, startCampaign);
 router.post('/:id/pause', pauseCampaign);
 router.post('/:id/cancel', cancelCampaign);
+router.post('/:id/leads', permissionMiddleware('campaigns'), upload.fields([{ name: 'csv', maxCount: 1 }]), addLeads);
+router.post('/:id/retry', permissionMiddleware('campaigns'), dailyLimitMiddleware, retryCampaign);
+router.post('/:id/resend', permissionMiddleware('campaigns'), dailyLimitMiddleware, resendCampaign);
 router.get('/:id/leads', getCampaignLeads);
 
 export default router;
