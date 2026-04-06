@@ -27,7 +27,6 @@ export const campaignProgress = async (req: Request, res: Response) => {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*'
   });
 
   const sendUpdate = async () => {
@@ -50,8 +49,8 @@ export const campaignProgress = async (req: Request, res: Response) => {
         clearInterval(interval);
         res.end();
       }
-    } catch (err) {
-      console.error('SSE error:', err);
+    } catch {
+      // silent
     }
   };
 

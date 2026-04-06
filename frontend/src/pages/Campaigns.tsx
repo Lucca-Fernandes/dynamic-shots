@@ -7,6 +7,7 @@ import {
 import { toast } from 'react-toastify';
 import api from '../api/api';
 import Papa from 'papaparse';
+import { LimitBanner } from '../components/LimitBanner';
 
 interface Campaign {
   id: string;
@@ -297,6 +298,7 @@ export function CampaignsPage() {
 
   return (
     <>
+      <LimitBanner />
       <div className="flex justify-between items-center mb-10">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">

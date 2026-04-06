@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/api';
 import Papa from 'papaparse';
+import { LimitBanner } from '../components/LimitBanner';
 
 export function SendMessagesPage() {
   const navigate = useNavigate();
@@ -144,6 +145,7 @@ export function SendMessagesPage() {
 
   return (
     <>
+      <LimitBanner />
       <div className="mb-10">
         <h1 className="text-3xl font-bold flex items-center gap-3">
           <Send className="text-indigo-500" /> Disparo Rapido

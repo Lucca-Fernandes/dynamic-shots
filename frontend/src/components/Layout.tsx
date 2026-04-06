@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Smartphone, Send, Megaphone, ShieldCheck, LogOut } from 'lucide-react';
+import { LayoutDashboard, Smartphone, Send, Megaphone, ShieldCheck, LogOut, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
@@ -40,16 +40,28 @@ export function Layout() {
             );
           })}
           {isAdmin && (
-            <Link
-              to="/z-admin"
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all ${
-                location.pathname === '/z-admin'
-                  ? 'bg-indigo-600/10 text-indigo-400 font-medium'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <ShieldCheck className="w-5 h-5 text-amber-500" /> Painel ADM
-            </Link>
+            <>
+              <Link
+                to="/z-admin"
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all ${
+                  location.pathname === '/z-admin'
+                    ? 'bg-indigo-600/10 text-indigo-400 font-medium'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <ShieldCheck className="w-5 h-5 text-amber-500" /> Aprovacoes
+              </Link>
+              <Link
+                to="/z-admin/users"
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-all ${
+                  location.pathname === '/z-admin/users'
+                    ? 'bg-indigo-600/10 text-indigo-400 font-medium'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <Users className="w-5 h-5 text-amber-500" /> Gestao Usuarios
+              </Link>
+            </>
           )}
         </nav>
 
