@@ -9,16 +9,22 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(uuid())
-  name      String
-  email     String     @unique
-  password  String
-  isApproved Boolean    @default(false)
-  role       String
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  instances Instance[]
-  campaigns Campaign[]
+  id             String     @id @default(uuid())
+  name           String
+  email          String     @unique
+  password       String
+  isApproved     Boolean    @default(false)
+  isSuspended    Boolean    @default(false)
+  role           String     @default("USER")
+  maxDailyShots  Int        @default(500)
+  dailyShotsSent Int        @default(0)
+  dailyShotsDate DateTime?
+  totalShotsSent Int        @default(0)
+  permissions    Json       @default("{\"campaigns\":true,\"quickSend\":true,\"multiInstance\":false}")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  instances      Instance[]
+  campaigns      Campaign[]
 }
 
 model Instance {
@@ -52,7 +58,7 @@ model Campaign {
   completedAt DateTime?
   owner       User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId     String
-  instance    Instance       @relation(fields: [instanceId], references: [id])
+  instance    Instance       @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   instanceId  String
   leads       Lead[]
   createdAt   DateTime       @default(now())

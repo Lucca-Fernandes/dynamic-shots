@@ -7,6 +7,7 @@ import { LoginPage } from './pages/Login';
 import { RegisterPage } from './pages/Register';
 import { DashboardPage } from './pages/Dashboard';
 import { AdminPage } from './pages/Admin';
+import { AdminUsersPage } from './pages/AdminUsers';
 import { SendMessagesPage } from './pages/SendMessages';
 import { CampaignsPage } from './pages/Campaigns';
 import { CampaignDetailPage } from './pages/CampaignDetail';
@@ -45,6 +46,14 @@ function AppRoutes() {
           element={
             <AdminRoute>
               <AdminPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/z-admin/users"
+          element={
+            <AdminRoute>
+              <AdminUsersPage />
             </AdminRoute>
           }
         />

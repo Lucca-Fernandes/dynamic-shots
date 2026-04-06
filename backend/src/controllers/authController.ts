@@ -3,6 +3,35 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma';
 
+export const getMyLimits = async (req: any, res: Response) => {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: req.userId },
+            select: {
+                maxDailyShots: true, dailyShotsSent: true, dailyShotsDate: true,
+                totalShotsSent: true, permissions: true, isSuspended: true
+            }
+        });
+        if (!user) return res.status(404).json({ error: 'Usuario nao encontrado' });
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const userDate = user.dailyShotsDate ? new Date(user.dailyShotsDate) : null;
+        const isToday = userDate && new Date(userDate).setHours(0, 0, 0, 0) === today.getTime();
+
+        res.json({
+            maxDailyShots: user.maxDailyShots,
+            dailyShotsSent: isToday ? user.dailyShotsSent : 0,
+            totalShotsSent: user.totalShotsSent,
+            dailyLimitReached: isToday ? user.dailyShotsSent >= user.maxDailyShots : false,
+            permissions: user.permissions,
+            isSuspended: user.isSuspended
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar limites' });
+    }
+};
+
 export const register = async (req: Request, res: Response): Promise<void> => {
     try {
         const { name, email, password } = req.body;
@@ -46,6 +75,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
                 email: true,
                 password: true,
                 isApproved: true,
+                isSuspended: true,
                 role: true
             }
         });
@@ -64,6 +94,13 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         if (!user.isApproved) {
             res.status(403).json({
                 error: 'Sua conta ainda não foi aprovada pelo administrador.'
+            });
+            return;
+        }
+
+        if (user.isSuspended) {
+            res.status(403).json({
+                error: 'Sua conta foi suspensa. Entre em contato com o administrador.'
             });
             return;
         }
@@ -120,5 +157,68 @@ export const approveUser = async (req: Request, res: Response) => {
         res.json({ message: 'Usuário aprovado com sucesso!' });
     } catch (error) {
         res.status(500).json({ error: 'Erro ao aprovar usuário' });
+    }
+};
+
+export const updateUser = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { role, isApproved, isSuspended, maxDailyShots, permissions } = req.body;
+
+        const data: any = {};
+        if (role !== undefined) data.role = role;
+        if (isApproved !== undefined) data.isApproved = isApproved;
+        if (isSuspended !== undefined) data.isSuspended = isSuspended;
+        if (maxDailyShots !== undefined) data.maxDailyShots = Math.max(0, Number(maxDailyShots));
+        if (permissions !== undefined) data.permissions = permissions;
+
+        const user = await prisma.user.update({
+            where: { id },
+            data,
+            select: {
+                id: true, name: true, email: true, role: true,
+                isApproved: true, isSuspended: true,
+                maxDailyShots: true, dailyShotsSent: true, dailyShotsDate: true,
+                totalShotsSent: true, permissions: true,
+                createdAt: true, updatedAt: true
+            }
+        });
+
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao atualizar usuario' });
+    }
+};
+
+export const getUserStats = async (req: Request, res: Response) => {
+    try {
+        const users = await prisma.user.findMany({
+            orderBy: { createdAt: 'desc' },
+            select: {
+                id: true, name: true, email: true, role: true,
+                isApproved: true, isSuspended: true,
+                maxDailyShots: true, dailyShotsSent: true, dailyShotsDate: true,
+                totalShotsSent: true, permissions: true,
+                createdAt: true, updatedAt: true,
+                _count: { select: { instances: true, campaigns: true } }
+            }
+        });
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao buscar usuarios' });
+    }
+};
+
+export const resetDailyShots = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const user = await prisma.user.update({
+            where: { id },
+            data: { dailyShotsSent: 0, dailyShotsDate: new Date() },
+            select: { id: true, dailyShotsSent: true }
+        });
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao resetar disparos' });
     }
 };
