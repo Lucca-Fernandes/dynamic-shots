@@ -20,7 +20,7 @@ model User {
   dailyShotsSent Int        @default(0)
   dailyShotsDate DateTime?
   totalShotsSent Int        @default(0)
-  permissions    Json       @default("{\"campaigns\":true,\"quickSend\":true,\"multiInstance\":false}")
+  permissions    Json       @default("{\"campaigns\":true,\"quickSend\":true,\"multiInstance\":false,\"mediaImage\":true,\"mediaVideo\":false,\"mediaAudio\":false,\"mediaDocument\":false}")
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   instances      Instance[]

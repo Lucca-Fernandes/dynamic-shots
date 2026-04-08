@@ -70,6 +70,41 @@ export const permissionMiddleware = (permission: string) => {
   };
 };
 
+const MEDIA_PERMISSION_MAP: Record<string, string> = {
+  image: 'mediaImage',
+  video: 'mediaVideo',
+  audio: 'mediaAudio',
+  document: 'mediaDocument',
+};
+
+export const mediaPermissionMiddleware = async (req: any, res: Response, next: NextFunction) => {
+  try {
+    const mediaType = req.body.mediaType || 'text';
+    if (mediaType === 'text') return next();
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { permissions: true, role: true }
+    });
+
+    if (!user) return res.status(401).json({ error: 'Usuario nao encontrado' });
+    if (user.role === 'ADMIN') return next();
+
+    const permKey = MEDIA_PERMISSION_MAP[mediaType];
+    if (!permKey) return next();
+
+    const perms = (user.permissions as Record<string, boolean>) || {};
+    if (!perms[permKey]) {
+      const labels: Record<string, string> = { image: 'imagens', video: 'videos', audio: 'audios', document: 'documentos' };
+      return res.status(403).json({ error: `Voce nao tem permissao para enviar ${labels[mediaType] || mediaType}. Contate o administrador.` });
+    }
+
+    return next();
+  } catch {
+    return res.status(500).json({ error: 'Erro ao verificar permissoes de midia' });
+  }
+};
+
 export const dailyLimitMiddleware = async (req: any, res: Response, next: NextFunction) => {
   try {
     const user = await prisma.user.findUnique({

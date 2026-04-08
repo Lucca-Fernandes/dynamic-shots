@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { authMiddleware, permissionMiddleware, dailyLimitMiddleware } from '../middlewares/authMiddleware';
+import { authMiddleware, permissionMiddleware, dailyLimitMiddleware, mediaPermissionMiddleware } from '../middlewares/authMiddleware';
 import {
   createCampaign, getCampaigns, getCampaign,
   startCampaign, pauseCampaign, cancelCampaign,
@@ -22,7 +22,7 @@ router.get('/', getCampaigns);
 router.post('/', permissionMiddleware('campaigns'), upload.fields([
   { name: 'csv', maxCount: 1 },
   { name: 'media', maxCount: 1 }
-]), createCampaign);
+]), mediaPermissionMiddleware, createCampaign);
 router.get('/:id', getCampaign);
 router.put('/:id', permissionMiddleware('campaigns'), upload.fields([{ name: 'media', maxCount: 1 }]), updateCampaign);
 router.delete('/:id', deleteCampaign);
