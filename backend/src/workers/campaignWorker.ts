@@ -1,9 +1,10 @@
 import { prisma } from '../lib/prisma';
+import { normalizeBrPhone } from '../lib/phone';
 import axios from 'axios';
 import path from 'path';
 import fs from 'fs';
 
-const POLL_INTERVAL = 5000;
+const POLL_INTERVAL = 15000;
 const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
 const activeCampaigns = new Map<string, boolean>();
 
@@ -39,41 +40,47 @@ function randomDelay(min: number, max: number): Promise<void> {
 async function sendMessage(instanceName: string, phone: string, message: string, mediaType: string, mediaUrl?: string | null) {
   const baseUrl = process.env.EVOLUTION_API_URL;
   const headers = { 'apikey': process.env.EVOLUTION_API_KEY };
-  const number = `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
+  const number = normalizeBrPhone(phone);
   const resolvedMedia = mediaUrl ? (resolveMediaToBase64(mediaUrl) || mediaUrl) : null;
 
   if (mediaType === 'text' || !resolvedMedia) {
     await axios.post(`${baseUrl}/message/sendText/${instanceName}`, {
       number,
-      textMessage: { text: message }
+      text: message
     }, { headers });
   } else if (mediaType === 'image') {
     await axios.post(`${baseUrl}/message/sendMedia/${instanceName}`, {
       number,
-      mediaMessage: { mediatype: 'image', caption: message, media: resolvedMedia }
+      mediatype: 'image',
+      caption: message,
+      media: resolvedMedia
     }, { headers });
   } else if (mediaType === 'video') {
     await axios.post(`${baseUrl}/message/sendMedia/${instanceName}`, {
       number,
-      mediaMessage: { mediatype: 'video', caption: message, media: resolvedMedia }
+      mediatype: 'video',
+      caption: message,
+      media: resolvedMedia
     }, { headers });
   } else if (mediaType === 'audio') {
     if (message && message.trim()) {
       await axios.post(`${baseUrl}/message/sendText/${instanceName}`, {
         number,
-        textMessage: { text: message }
+        text: message
       }, { headers });
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
     await axios.post(`${baseUrl}/message/sendWhatsAppAudio/${instanceName}`, {
       number,
-      options: { presence: 'recording', encoding: true },
-      audioMessage: { audio: resolvedMedia }
+      audio: resolvedMedia
     }, { headers });
   } else if (mediaType === 'document') {
     await axios.post(`${baseUrl}/message/sendMedia/${instanceName}`, {
       number,
-      mediaMessage: { mediatype: 'document', caption: message, media: resolvedMedia, fileName: 'document' }
+      mediatype: 'document',
+      caption: message,
+      media: resolvedMedia,
+      fileName: 'document'
     }, { headers });
   }
 }

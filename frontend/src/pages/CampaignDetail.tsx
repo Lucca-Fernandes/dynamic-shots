@@ -427,8 +427,10 @@ export function CampaignDetailPage() {
     );
   }
 
+  const processed = Math.min(campaign.sentCount + campaign.errorCount, campaign.totalLeads);
+  const pending = Math.max(campaign.totalLeads - campaign.sentCount - campaign.errorCount, 0);
   const progress = campaign.totalLeads > 0
-    ? Math.round(((campaign.sentCount + campaign.errorCount) / campaign.totalLeads) * 100)
+    ? Math.min(Math.round((processed / campaign.totalLeads) * 100), 100)
     : 0;
 
   const totalPages = Math.ceil(leadsTotal / 20);
@@ -551,7 +553,7 @@ export function CampaignDetailPage() {
             <Clock className="w-4 h-4" /> Pendentes
           </div>
           <p className="text-2xl font-bold text-blue-400">
-            {campaign.totalLeads - campaign.sentCount - campaign.errorCount}
+            {pending}
           </p>
         </div>
       </div>
