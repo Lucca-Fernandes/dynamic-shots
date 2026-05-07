@@ -148,7 +148,7 @@ export function CampaignDetailPage() {
     const token = localStorage.getItem('@DynamicShots:token');
     if (!token || !id) return;
 
-    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5001';
     const es = new EventSource(`${apiBase}/campaigns/${id}/progress?token=${token}`);
 
     es.onmessage = (event) => {
